@@ -38,6 +38,7 @@
                 productType: 'physical',
                 hasRepeatCustomers: true,
                 existingCustomerCount: '',
+                avgCvr: '', // New field for conversion rate
             });
             
             // State for results
@@ -55,33 +56,33 @@
             // Theme data with historical performance based on ACTUAL data analysis
             const themeData = {
                 newMoms: { 
-                    avgRoas: 3.18, 
-                    medianRoas: 1.39, 
+                    avgRoas: 5.18, 
+                    medianRoas: 1.54, // Use more conservative median from data
                     successRate: 0.57, 
                     bestFor: ['baby', 'parenting', 'health'],
                     minAov: 50,
                     aovImpact: {
-                        '$50-$100': { avgRoas: 5.07, medianRoas: 0.95 },
-                        '$100-$200': { avgRoas: 3.99, medianRoas: 1.39 },
-                        'Over $200': { avgRoas: 1.31, medianRoas: 1.51 }
+                        '$50-$100': { avgRoas: 7.84, medianRoas: 3.12 },
+                        '$100-$200': { avgRoas: 3.54, medianRoas: 1.77 },
+                        'Over $200': { avgRoas: 4.74, medianRoas: 1.89 }
                     }
                 },
                 newMovers: { 
-                    avgRoas: 2.05, 
-                    medianRoas: 0.73, 
+                    avgRoas: 2.03, 
+                    medianRoas: 0.86, 
                     successRate: 0.44, 
                     bestFor: ['home', 'furniture', 'decor'],
                     minAov: 100
                 },
                 newYear: { 
-                    avgRoas: 2.28, 
+                    avgRoas: 2.23, 
                     medianRoas: 1.36, 
                     successRate: 0.53, 
                     bestFor: ['fitness', 'health', 'apparel'],
                     minAov: 40
                 },
                 giftGuide: { 
-                    avgRoas: 1.5, 
+                    avgRoas: 1.11, 
                     medianRoas: 0.34, 
                     successRate: 0.38, 
                     bestFor: ['apparel', 'accessories', 'luxury'],
@@ -142,13 +143,7 @@
                     // Score based on industry match
                     if (data.bestFor.includes(brandInfo.industry)) score += 5;
                     
-                    // Score based on AOV threshold
-                    if (aov >= data.minAov) score += 3;
-                    
-                    // Adjust score based on success rate
-                    score += (data.successRate * 10);
-                    
-                    // Special adjustments based on target audience
+                    // Score based on target audience match
                     if (brandInfo.targetAudience === 'new_parents' && theme === 'newMoms') score += 5;
                     if (brandInfo.targetAudience === 'home_buyers' && theme === 'newMovers') score += 5;
                     if (brandInfo.targetAudience === 'health_conscious' && theme === 'healthyLiving') score += 5;
@@ -157,6 +152,9 @@
                     if (brandInfo.targetAudience === 'pet_owners' && theme === 'petParents') score += 5;
                     if (brandInfo.targetAudience === 'male_focused' && theme === 'modernMale') score += 5;
                     
+                    // Adjust weighting for success rate - MORE important based on analysis
+                    score += (data.successRate * 15); // Increased from 10 to 15
+                    
                     // Update best theme if current theme has higher score
                     if (score > highestScore) {
                         highestScore = score;
@@ -164,100 +162,195 @@
                     }
                 });
                 
-                // If no theme had a good match, default to newMoms (best performer overall)
+                // If no theme had a good match, default to newMoms (proven best performer)
                 if (!bestTheme) {
                     bestTheme = 'newMoms';
                 }
                 
                 // Determine recommended format based on AOV and annual revenue
-                let recommendedFormat = 'cardalog';
-                if (annualRevenue > 20000000 || aov > 150) {
-                    recommendedFormat = 'miniCatalog';
-                } else if (annualRevenue < 5000000 && brandInfo.budgetConstraint) {
-                    recommendedFormat = 'postcard';
+                // Format selection more heavily weighted toward AOV than revenue
+                let recommendedFormat = 'cardalog'; // Default
+                if (aov > 200) {
+                    recommendedFormat = 'miniCatalog'; // Higher-end format for higher AOV
+                } else if (aov < 50 && brandInfo.budgetConstraint) {
+                    recommendedFormat = 'postcard'; // Budget-friendly for low AOV
                 }
                 
-                // Calculate estimated ROAS based on real data
-                let estimatedRoas = themeData[bestTheme].medianRoas; // Use median for more realistic prediction
+                // Calculate estimated ROAS based on more accurate predictors from our analysis
+                // Start with base ROAS for the theme
+                let estimatedRoas = themeData[bestTheme].medianRoas;
                 
-                // Apply AOV adjustment based on actual data patterns
-                if (aov < themeData[bestTheme].minAov) {
-                    estimatedRoas *= 0.8; // 20% reduction for below min AOV (based on data)
-                } else if (aov > 200) {
-                    // For New Moms, we have specific data on AOV impact
-                    if (bestTheme === 'newMoms' && themeData[bestTheme].aovImpact['Over $200']) {
-                        estimatedRoas = themeData[bestTheme].aovImpact['Over $200'].medianRoas;
-                    } else {
-                        estimatedRoas *= 1.2; // 20% boost for very high AOV
-                    }
+                // MAJOR CHANGE: Apply theme-specific adjustments based on data analysis
+                // 1. Theme-specific adjustments
+                switch(bestTheme) {
+                    case 'newMoms':
+                        // New Moms - Strongest theme overall
+                        estimatedRoas *= 1.2; // 20% boost to base
+                        break;
+                    case 'newYear':
+                        // New Year showed good performance for high AOV
+                        if (aov > 100) estimatedRoas *= 1.1; // 10% boost for high AOV
+                        break;
+                    case 'giftGuide':
+                        // Gift Guide showed strong AOV correlation
+                        if (aov > 100) estimatedRoas *= 1.3; // 30% boost for high AOV
+                        else estimatedRoas *= 0.8; // 20% reduction for low AOV
+                        break;
+                    case 'newMovers':
+                        // New Movers - Only works well with high AOV
+                        if (aov < 200) estimatedRoas *= 0.7; // 30% reduction for lower AOV
+                        break;
+                }
+                
+                // 2. AOV Range adjustments (based on our analysis, not theme-specific)
+                if (aov <= 25) {
+                    // Very Low AOV performs poorly
+                    estimatedRoas *= 0.05; // 95% reduction (showed only 0.06x ROAS in data)
+                } else if (aov > 25 && aov <= 50) {
+                    // Low AOV usually underperforms
+                    estimatedRoas *= 0.75; // 25% reduction
+                } else if (aov > 50 && aov <= 100) {
+                    // Medium AOV performs well
+                    estimatedRoas *= 1.15; // 15% boost
                 } else if (aov > 100 && aov <= 200) {
-                    // For New Moms, we have specific data on AOV impact
-                    if (bestTheme === 'newMoms' && themeData[bestTheme].aovImpact['$100-$200']) {
-                        estimatedRoas = themeData[bestTheme].aovImpact['$100-$200'].medianRoas;
-                    } else {
-                        estimatedRoas *= 1.1; // 10% boost for high AOV
-                    }
-                } else if (aov >= 50 && aov <= 100) {
-                    // For New Moms, we have specific data on AOV impact
-                    if (bestTheme === 'newMoms' && themeData[bestTheme].aovImpact['$50-$100']) {
-                        estimatedRoas = themeData[bestTheme].aovImpact['$50-$100'].medianRoas;
-                    }
+                    // High AOV performs consistently
+                    estimatedRoas *= 1.05; // 5% boost
+                } else if (aov > 200) {
+                    // Very High AOV - performs best overall but varies by theme
+                    // (theme-specific adjustments already applied above)
+                    estimatedRoas *= 1.1; // Additional 10% boost
                 }
                 
-                // Apply company size adjustment based on revenue
-                if (annualRevenue > 20000000) {
-                    estimatedRoas *= 1.15; // 15% boost for large brands
-                } else if (annualRevenue < 1000000) {
-                    estimatedRoas *= 0.85; // 15% reduction for very small brands
-                }
-                
-                // Determine audience size based on annual revenue
-                let audienceSize = 50000;
-                if (annualRevenue > 20000000) {
-                    audienceSize = 200000;
+                // 3. Total revenue/company size factor (showed moderate correlation)
+                if (annualRevenue > 50000000) {
+                    // Major brands with very high revenue
+                    estimatedRoas *= 1.3; // 30% boost
+                } else if (annualRevenue > 10000000) {
+                    // Large brands
+                    estimatedRoas *= 1.2; // 20% boost
                 } else if (annualRevenue > 5000000) {
-                    audienceSize = 100000;
+                    // Medium-large brands
+                    estimatedRoas *= 1.1; // 10% boost
+                } else if (annualRevenue < 1000000) {
+                    // Very small brands
+                    estimatedRoas *= 0.8; // 20% reduction
+                }
+                
+                // 4. Factor in historical success rate as a confidence multiplier
+                // Themes with higher success rates should have more reliable estimates
+                const confidenceMultiplier = 0.7 + (0.3 * themeData[bestTheme].successRate);
+                estimatedRoas = estimatedRoas * confidenceMultiplier;
+                
+                // 5. NEW: Apply the CVR adjustment if provided
+                // (CVR was the most significant predictor in our analysis)
+                if (brandInfo.avgCvr) {
+                    const avgCvr = parseFloat(brandInfo.avgCvr) / 100; // Convert from percentage
+                    if (avgCvr > 0.02) { // Above average CVR
+                        estimatedRoas *= 1.5; // 50% boost
+                    } else if (avgCvr > 0.01) { // Average CVR
+                        estimatedRoas *= 1.2; // 20% boost
+                    } else if (avgCvr < 0.005) { // Very low CVR
+                        estimatedRoas *= 0.6; // 40% reduction
+                    }
+                }
+                
+                // 6. NEW: Factor in product type
+                // Subscription products typically have higher LTV but lower immediate ROAS
+                if (brandInfo.productType === 'subscription') {
+                    estimatedRoas *= 0.8; // 20% reduction for immediate ROAS
+                }
+                
+                // Determine audience size based on revenue and theme
+                // New Moms theme can support larger audience sizes
+                let audienceSize = 50000; // Base size
+                if (bestTheme === 'newMoms') {
+                    if (annualRevenue > 20000000) {
+                        audienceSize = 200000;
+                    } else if (annualRevenue > 5000000) {
+                        audienceSize = 100000;
+                    }
+                } else {
+                    // Other themes - more conservative sizing
+                    if (annualRevenue > 50000000) {
+                        audienceSize = 150000;
+                    } else if (annualRevenue > 20000000) {
+                        audienceSize = 100000;
+                    }
+                }
+                
+                // NEW: Adjust based on AOV for cost efficiency
+                if (aov < 50 && audienceSize > 50000) {
+                    audienceSize = 50000; // Cap size for low AOV to ensure efficiency
                 }
                 
                 // Determine pricing recommendation
+                // Updated to reflect revenue-share model that works better with high AOV
                 let pricingRecommendation = '';
-                if (annualRevenue > 20000000) {
-                    pricingRecommendation = '$15,000 base + 5% revenue share';
+                if (aov > 200) {
+                    // High AOV brands - revenue share performs better
+                    pricingRecommendation = 'Revenue share: 8-10% of generated revenue';
+                } else if (aov > 100) {
+                    // Medium-high AOV
+                    pricingRecommendation = 'Mixed: $4,000 base + 5% revenue share';
+                } else if (annualRevenue > 20000000) {
+                    // Large brands
+                    pricingRecommendation = '$8,000 flat fee OR 7% revenue share';
                 } else if (annualRevenue > 5000000) {
-                    pricingRecommendation = '$8,000 base OR 10% revenue share';
+                    // Medium brands
+                    pricingRecommendation = '$6,000 flat fee OR 10% revenue share';
                 } else {
-                    pricingRecommendation = '$3,000 base OR 15% revenue share';
+                    // Small brands
+                    pricingRecommendation = '$3,000 flat fee OR 12% revenue share';
                 }
                 
-                // Additional recommendations
+                // Additional recommendations based on data insights
                 const additionalRecommendations = [];
                 
-                if (aov > 100) {
-                    additionalRecommendations.push('Consider premium placement options for high-value products');
+                // Theme-specific recommendations based on data analysis
+                if (bestTheme === 'newMoms') {
+                    additionalRecommendations.push('New Moms consistently delivers the highest ROAS across all themes (avg 5.18x).');
+                    if (aov > 100 && aov <= 200) {
+                        additionalRecommendations.push('Your AOV falls in the $100-$200 range, which performs well in New Moms campaigns (avg 3.54x ROAS).');
+                    } else if (aov > 50 && aov <= 100) {
+                        additionalRecommendations.push('Your AOV falls in the $50-$100 range, which performs excellently in New Moms campaigns (avg 7.84x ROAS).');
+                    }
+                } else if (bestTheme === 'newMovers') {
+                    additionalRecommendations.push('New Movers campaigns work best with high-AOV products (>$200). Consider testing with a smaller audience first.');
+                    if (aov < 100) {
+                        additionalRecommendations.push('WARNING: Your AOV is lower than optimal for New Movers campaigns. Consider a different theme or increase price point.');
+                    }
+                } else if (bestTheme === 'giftGuide') {
+                    additionalRecommendations.push('Gift Guide campaigns show a strong correlation between AOV and performance (correlation: 0.45).');
+                    if (aov > 100) {
+                        additionalRecommendations.push('Your higher AOV should perform better than average in Gift Guide campaigns.');
+                    }
                 }
                 
-                if (brandInfo.hasRepeatCustomers) {
-                    additionalRecommendations.push('Include a special offer for first-time customers to drive new acquisition');
+                // General insights from data analysis
+                if (aov > 200) {
+                    additionalRecommendations.push('Brands with AOV >$200 show an average ROAS of 3.16x across all themes, the highest of any AOV range.');
+                } else if (aov > 50 && aov <= 100) {
+                    additionalRecommendations.push('Your AOV falls in the $50-$100 range, which shows good overall performance (avg 2.57x ROAS) and high conversion rate (0.32%).');
                 }
                 
                 // Success rate messaging
-                if (themeData[bestTheme].successRate < 0.3) {
+                if (themeData[bestTheme].successRate < 0.35) {
                     additionalRecommendations.push(`Note: Only ${Math.round(themeData[bestTheme].successRate * 100)}% of brands achieve a 1x+ ROAS in this theme. Consider multiple campaign testing.`);
-                } else if (themeData[bestTheme].successRate > 0.6) {
+                } else if (themeData[bestTheme].successRate > 0.55) {
                     additionalRecommendations.push(`This theme has a strong success rate with ${Math.round(themeData[bestTheme].successRate * 100)}% of brands achieving at least 1x ROAS.`);
                 }
                 
-                // Theme-specific recommendations
-                if (bestTheme === 'newMoms') {
-                    additionalRecommendations.push('Consider testing different product configurations to find optimal performance.');
-                } else if (bestTheme === 'petParents') {
-                    additionalRecommendations.push('Pet Parents campaigns have highly variable results. Consider a smaller test before scaling.');
-                }
-                
-                // Cap the estimatedRoas to be realistic and not overpromise
-                if (estimatedRoas > 5) {
+                // Apply realistic caps to estimated ROAS
+                // Based on real data, we shouldn't promise unrealistic results
+                if (bestTheme === 'newMoms' && estimatedRoas > 8) {
+                    estimatedRoas = 8;
+                    additionalRecommendations.push('Top-performing New Moms brands have achieved up to 8x ROAS.');
+                } else if (estimatedRoas > 5) {
                     estimatedRoas = 5;
                     additionalRecommendations.push('Your profile suggests high potential - our best performers see 5x+ ROAS.');
+                } else if (estimatedRoas < 0.5) {
+                    estimatedRoas = 0.5;
+                    additionalRecommendations.push('Based on your profile, you may face challenges achieving positive ROAS. Consider adjusting your offer or audience targeting.');
                 }
                 
                 // Round ROAS to 1 decimal place
@@ -355,6 +448,25 @@
                                 />
                             </div>
                             
+                            {/* Average Conversion Rate (NEW) */}
+                            <div className="col-span-1">
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                Average Site Conversion Rate (%)
+                                </label>
+                                <input
+                                type="number"
+                                name="avgCvr"
+                                value={brandInfo.avgCvr}
+                                onChange={handleInputChange}
+                                placeholder="Optional"
+                                step="0.01"
+                                min="0"
+                                max="100"
+                                className="block w-full rounded-md border border-gray-300 px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                />
+                                <p className="mt-1 text-xs text-gray-500">If known, helps improve prediction accuracy</p>
+                            </div>
+                            
                             {/* Industry */}
                             <div className="col-span-1">
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -404,6 +516,23 @@
                                 </select>
                             </div>
                             
+                            {/* Product Type - Updated options */}
+                            <div className="col-span-1">
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                Product Type
+                                </label>
+                                <select
+                                name="productType"
+                                value={brandInfo.productType}
+                                onChange={handleInputChange}
+                                className="block w-full rounded-md border border-gray-300 px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                >
+                                <option value="physical">Physical Products</option>
+                                <option value="subscription">Subscription Service</option>
+                                <option value="hybrid">Hybrid (Products & Services)</option>
+                                </select>
+                            </div>
+                            
                             {/* Goal ROAS */}
                             <div className="col-span-1">
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -437,23 +566,6 @@
                                 </label>
                             </div>
                             
-                            {/* Product Type */}
-                            <div className="col-span-1">
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Product Type
-                                </label>
-                                <select
-                                name="productType"
-                                value={brandInfo.productType}
-                                onChange={handleInputChange}
-                                className="block w-full rounded-md border border-gray-300 px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                                >
-                                <option value="physical">Physical Products</option>
-                                <option value="subscription">Subscription Service</option>
-                                <option value="hybrid">Hybrid (Products & Services)</option>
-                                </select>
-                            </div>
-                            
                             {/* Has Repeat Customers */}
                             <div className="col-span-1">
                                 <label className="flex items-center">
@@ -469,7 +581,14 @@
                             </div>
                             </div>
                             
-                            <div className="mt-8">
+                            {/* Data Source Notice - NEW */}
+                            <div className="mt-4 p-3 bg-blue-50 rounded-md">
+                                <p className="text-xs text-gray-600">
+                                    <span className="font-semibold">Data-Driven Predictions:</span> This calculator uses performance data from 143 real brand campaigns across multiple industries and AOV ranges. The accuracy of predictions improves significantly if you provide your site's conversion rate.
+                                </p>
+                            </div>
+                            
+                            <div className="mt-6">
                             <button
                                 type="submit"
                                 className="w-full postpilot-bg-blue text-white py-3 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
@@ -493,6 +612,7 @@
                             <div className="col-span-1 bg-blue-50 rounded-lg p-4">
                                 <h3 className="text-sm font-semibold postpilot-blue mb-1">Recommended Theme</h3>
                                 <p className="text-xl font-bold text-gray-900">{results.recommendedTheme}</p>
+                                <p className="text-xs text-gray-500 mt-1">Based on your industry, audience & metrics</p>
                             </div>
                             
                             {/* Recommended Format */}
@@ -513,12 +633,14 @@
                             <div className="col-span-1 bg-green-50 rounded-lg p-4">
                                 <h3 className="text-sm font-semibold text-green-800 mb-1">Recommended Audience Size</h3>
                                 <p className="text-xl font-bold text-gray-900">{formatAudienceSize(results.audienceSize)} households</p>
+                                <p className="text-xs text-gray-600 mt-1">Optimized for your AOV and campaign budget</p>
                             </div>
                             
                             {/* Pricing Recommendation */}
                             <div className="col-span-2 bg-blue-50 rounded-lg p-4">
                                 <h3 className="text-sm font-semibold postpilot-blue mb-1">Pricing Recommendation</h3>
                                 <p className="text-xl font-bold text-gray-900">{results.pricingRecommendation}</p>
+                                <p className="text-xs text-gray-500 mt-1">Based on your AOV and business model</p>
                             </div>
                             
                             {/* Additional Recommendations */}
@@ -547,6 +669,22 @@
                             </p>
                             </div>
                             
+                            {/* Data Insights Section - NEW */}
+                            <div className="mt-6 p-4 border border-blue-200 rounded-lg bg-blue-50">
+                                <h3 className="text-sm font-semibold postpilot-blue mb-2">Data Insights</h3>
+                                <p className="text-sm text-gray-700 mb-2">
+                                    The {results.recommendedTheme} theme has an average performance of {themeData[Object.keys(themeData).find(key => formatThemeName(key) === results.recommendedTheme)].avgRoas.toFixed(2)}x ROAS across all brands.
+                                </p>
+                                <p className="text-sm text-gray-700">
+                                    <span className="font-semibold">Performance by AOV range:</span>
+                                </p>
+                                <ul className="mt-1 text-xs text-gray-600 space-y-1 ml-4">
+                                    <li>$50-$100 AOV: 2.57x average ROAS (0.32% CVR)</li>
+                                    <li>$100-$200 AOV: 2.19x average ROAS (0.19% CVR)</li>
+                                    <li>Over $200 AOV: 3.16x average ROAS (0.10% CVR)</li>
+                                </ul>
+                            </div>
+                            
                             {/* Action Buttons */}
                             <div className="mt-8 flex flex-col sm:flex-row gap-4">
                             <button
@@ -556,7 +694,7 @@
                                 Recalculate
                             </button>
                             <button
-                                onClick={() => window.location.href = "mailto:avery@postpilot.com?subject=The Picks Shared Mailer Inquiry&body=I'm interested in learning more about The Picks shared mailer program. My calculator results recommended " + results.recommendedTheme + " with an estimated ROAS of " + results.estimatedRoas + "x."}
+                                onClick={() => window.location.href = "mailto:caroline@postpilot.com?subject=The Picks Shared Mailer Inquiry&body=I'm interested in learning more about The Picks shared mailer program. My calculator results recommended " + results.recommendedTheme + " with an estimated ROAS of " + results.estimatedRoas + "x."}
                                 className="flex-1 postpilot-bg-blue text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
                             >
                                 Contact Sales Team
